@@ -1,0 +1,467 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>數字分解消消樂 - 高對比語音版</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Fredoka:wght@500;700&display=swap');
+
+        body {
+            font-family: 'Fredoka', sans-serif;
+            background-color: #fff1f2;
+            background-image: radial-gradient(#ffe4e6 2px, transparent 2px);
+            background-size: 24px 24px;
+            touch-action: manipulation;
+        }
+
+        /* 遊戲網格樣式 - 20 格 (5x4) */
+        .game-grid {
+            display: grid;
+            grid-template-columns: repeat(5, 1fr);
+            gap: 12px;
+            max-width: 400px;
+            margin: 0 auto;
+        }
+
+        .cell {
+            aspect-ratio: 1;
+            border-radius: 20px;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            font-size: 2.2rem;
+            font-weight: 700;
+            /* 修改：改為純黑色，增加對比度 */
+            color: #000000; 
+            text-shadow: 2px 2px 0px rgba(255,255,255,0.8); /* 白色邊緣讓黑色更明顯 */
+            box-shadow: 0 6px 0px rgba(0,0,0,0.1);
+            cursor: pointer;
+            transition: all 0.1s;
+            position: relative;
+            user-select: none;
+            -webkit-tap-highlight-color: transparent;
+        }
+
+        .cell:active {
+            transform: translateY(6px);
+            box-shadow: 0 0px 0px rgba(0,0,0,0.1);
+        }
+
+        /* 選中狀態 */
+        .cell.selected {
+            transform: translateY(-2px) scale(1.05);
+            box-shadow: 0 12px 20px -5px rgba(0,0,0,0.2);
+            z-index: 10;
+            filter: brightness(1.1);
+            border: 4px solid #000; /* 選中時加黑框，更清楚 */
+        }
+
+        /* 配對成功 */
+        .cell.matched {
+            transform: scale(1.2);
+            opacity: 0;
+            transition: transform 0.4s ease-out, opacity 0.4s ease-out;
+        }
+
+        /* 搖晃動畫 */
+        .cell.shake {
+            animation: shake 0.4s cubic-bezier(.36,.07,.19,.97) both;
+        }
+
+        @keyframes shake {
+            10%, 90% { transform: translate3d(-1px, 0, 0); }
+            20%, 80% { transform: translate3d(2px, 0, 0); }
+            30%, 50%, 70% { transform: translate3d(-4px, 0, 0); }
+            40%, 60% { transform: translate3d(4px, 0, 0); }
+        }
+
+        .float-text {
+            position: absolute;
+            color: #ef4444; /* 改深紅色 */
+            font-weight: 900;
+            font-size: 1.8rem;
+            pointer-events: none;
+            text-shadow: 2px 2px 0px white;
+            animation: floatUp 0.8s ease-out forwards;
+            z-index: 20;
+        }
+
+        @keyframes floatUp {
+            0% { transform: translateY(0) scale(1); opacity: 1; }
+            100% { transform: translateY(-60px) scale(1.5) rotate(10deg); opacity: 0; }
+        }
+
+        .level-btn {
+            transition: all 0.2s;
+            font-family: 'Fredoka', sans-serif;
+        }
+        .level-btn:hover {
+            transform: translateY(-4px);
+            filter: brightness(1.05);
+        }
+
+        /* 自定義馬卡龍色系類別 */
+        .bg-macaron-pink { background-color: #FFB7B2; }
+        .bg-macaron-green { background-color: #E2F0CB; }
+        .bg-macaron-blue { background-color: #B5EAD7; }
+        .bg-macaron-purple { background-color: #E0BBE4; }
+        .bg-macaron-yellow { background-color: #FFDAC1; }
+        .bg-macaron-orange { background-color: #FF9AA2; }
+
+        .win-modal {
+            animation: popIn 0.5s cubic-bezier(0.175, 0.885, 0.32, 1.275) forwards;
+        }
+
+        @keyframes popIn {
+            0% { transform: scale(0.5); opacity: 0; }
+            100% { transform: scale(1); opacity: 1; }
+        }
+    </style>
+</head>
+<body class="h-screen flex flex-col overflow-hidden relative">
+
+    <!-- 主選單畫面 -->
+    <div id="menu-screen" class="flex-1 flex flex-col items-center justify-center p-4 w-full max-w-2xl mx-auto z-10">
+        <div class="text-center mb-8">
+            <h1 class="text-5xl md:text-6xl font-bold text-slate-800 mb-2 tracking-wide" style="text-shadow: 3px 3px 0px #fff;">數字分解消消樂</h1>
+            <p class="text-slate-600 text-xl font-bold">全部消光光就贏了！</p>
+        </div>
+
+        <div class="bg-white/80 backdrop-blur-sm p-8 rounded-[30px] shadow-xl w-full max-h-[70vh] overflow-y-auto border-4 border-white">
+            <h2 class="text-2xl font-bold text-center text-slate-800 mb-6">🍭 請選擇目標數字</h2>
+            <div class="grid grid-cols-4 gap-4" id="level-buttons">
+                <!-- 按鈕由 JS 生成 -->
+            </div>
+        </div>
+    </div>
+
+    <!-- 遊戲畫面 -->
+    <div id="game-screen" class="hidden flex-1 flex-col items-center p-4 w-full h-full relative z-10">
+        
+        <!-- 頂部資訊欄 -->
+        <div class="w-full max-w-lg flex justify-between items-center mb-6 bg-white/90 backdrop-blur rounded-2xl shadow-lg gap-4 p-4 border-2 border-white">
+            <div class="text-center flex-1">
+                <div class="text-xs text-slate-500 font-bold uppercase tracking-wider mb-1">目標</div>
+                <div class="text-4xl font-black text-slate-800" id="target-display" style="text-shadow: 2px 2px 0 #fff;">10</div>
+            </div>
+            <div class="h-10 w-px bg-slate-300"></div>
+            <div class="text-center flex-1">
+                <div class="text-xs text-slate-500 font-bold uppercase tracking-wider mb-1">時間</div>
+                <div class="text-3xl font-bold text-slate-800 font-mono" id="timer-display">00:00</div>
+            </div>
+            <div class="h-10 w-px bg-slate-300"></div>
+            <div class="text-center flex-1">
+                <div class="text-xs text-slate-500 font-bold uppercase tracking-wider mb-1">剩餘</div>
+                <div class="text-3xl font-bold text-slate-800" id="remaining-display">20</div>
+            </div>
+        </div>
+
+        <!-- 遊戲區域 -->
+        <div class="flex-1 w-full flex items-center justify-center relative">
+            <div class="game-grid" id="game-grid">
+                <!-- 網格由 JS 生成 -->
+            </div>
+        </div>
+
+        <!-- 底部按鈕 -->
+        <div class="mt-4 mb-6">
+            <button onclick="goBack()" class="flex items-center gap-2 px-8 py-3 bg-slate-800 hover:bg-slate-900 text-white rounded-full font-bold transition-colors shadow-lg border-2 border-white">
+                <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
+                    <path fill-rule="evenodd" d="M9.707 16.707a1 1 0 01-1.414 0l-6-6a1 1 0 010-1.414l6-6a1 1 0 011.414 1.414L5.414 9H17a1 1 0 110 2H5.414l4.293 4.293a1 1 0 010 1.414z" clip-rule="evenodd" />
+                </svg>
+                回選單
+            </button>
+        </div>
+    </div>
+
+    <!-- 勝利畫面 Overlay -->
+    <div id="win-overlay" class="hidden absolute inset-0 bg-black/40 z-50 flex items-center justify-center p-4 backdrop-blur-sm">
+        <div class="win-modal bg-white rounded-[40px] p-8 text-center shadow-2xl max-w-sm w-full relative overflow-hidden border-8 border-[#B5EAD7]">
+            <div class="absolute inset-0 pointer-events-none overflow-hidden" id="confetti-container"></div>
+            
+            <div class="text-7xl mb-4 animate-bounce">🦄</div>
+            <h2 class="text-3xl font-bold text-slate-800 mb-2">恭喜過關！</h2>
+            <p class="text-slate-600 mb-6 font-medium">太厲害了，所有數字都找到了！</p>
+            
+            <div class="mb-8 p-4 bg-[#f0f9ff] rounded-2xl border-2 border-[#E0F2FE]">
+                <span class="text-slate-600 block text-sm font-bold mb-1">本次花費時間</span>
+                <span class="text-4xl font-bold text-slate-800 font-mono tracking-tighter" id="final-time-display">00:25</span>
+            </div>
+            
+            <div class="flex flex-col gap-3">
+                <button onclick="restartLevel()" class="w-full py-4 bg-[#FF9AA2] hover:bg-[#ff808b] text-white rounded-2xl font-bold text-xl shadow-[0_4px_0_#e0757d] active:shadow-none active:translate-y-1 transition-all border-2 border-white">
+                    再玩一次
+                </button>
+                <button onclick="goBack()" class="w-full py-4 bg-slate-100 hover:bg-slate-200 text-slate-600 rounded-2xl font-bold text-lg transition-colors border-2 border-slate-200">
+                    回主選單
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // 遊戲狀態
+        const state = {
+            target: 10,
+            remaining: 20,
+            selectedCell: null,
+            isProcessing: false,
+            gridSize: 20,
+            startTime: 0,
+            timerInterval: null
+        };
+
+        const elements = {
+            menuScreen: document.getElementById('menu-screen'),
+            gameScreen: document.getElementById('game-screen'),
+            levelButtons: document.getElementById('level-buttons'),
+            gameGrid: document.getElementById('game-grid'),
+            targetDisplay: document.getElementById('target-display'),
+            remainingDisplay: document.getElementById('remaining-display'),
+            timerDisplay: document.getElementById('timer-display'),
+            winOverlay: document.getElementById('win-overlay'),
+            finalTimeDisplay: document.getElementById('final-time-display')
+        };
+
+        const synth = window.speechSynthesis;
+        
+        // 馬卡龍色系列表
+        const macaronColors = [
+            'bg-macaron-pink',
+            'bg-macaron-green',
+            'bg-macaron-blue',
+            'bg-macaron-purple',
+            'bg-macaron-yellow',
+            'bg-macaron-orange'
+        ];
+
+        function initMenu() {
+            elements.levelButtons.innerHTML = '';
+            
+            for (let i = 3; i <= 10; i++) {
+                let btn = document.createElement('button');
+                let colorClass = macaronColors[(i) % macaronColors.length];
+                
+                // 修改：文字改為黑色 text-black，增加對比度
+                btn.className = `level-btn ${colorClass} text-black font-bold text-3xl py-6 rounded-2xl shadow-[0_4px_0_rgba(0,0,0,0.1)] active:shadow-none active:translate-y-1 border-2 border-white/40`;
+                btn.innerText = i;
+                btn.onclick = () => startGame(i);
+                elements.levelButtons.appendChild(btn);
+            }
+        }
+
+        function startGame(target) {
+            state.target = target;
+            state.remaining = state.gridSize;
+            state.selectedCell = null;
+            state.isProcessing = false;
+
+            elements.targetDisplay.innerText = state.target;
+            elements.remainingDisplay.innerText = state.remaining;
+            elements.winOverlay.classList.add('hidden');
+            elements.timerDisplay.innerText = "00:00";
+
+            elements.menuScreen.classList.add('hidden');
+            elements.gameScreen.classList.remove('hidden');
+            elements.gameScreen.classList.add('flex');
+
+            generateGrid();
+            startTimer();
+        }
+
+        function restartLevel() {
+            startGame(state.target);
+        }
+
+        function startTimer() {
+            if (state.timerInterval) clearInterval(state.timerInterval);
+            state.startTime = Date.now();
+            
+            state.timerInterval = setInterval(() => {
+                const elapsed = Math.floor((Date.now() - state.startTime) / 1000);
+                const minutes = Math.floor(elapsed / 60).toString().padStart(2, '0');
+                const seconds = (elapsed % 60).toString().padStart(2, '0');
+                elements.timerDisplay.innerText = `${minutes}:${seconds}`;
+            }, 1000);
+        }
+
+        function stopTimer() {
+            if (state.timerInterval) clearInterval(state.timerInterval);
+            return elements.timerDisplay.innerText;
+        }
+
+        function speakText(text) {
+            if (synth.speaking) {
+                synth.cancel();
+            }
+            const utterance = new SpeechSynthesisUtterance(text);
+            utterance.lang = 'zh-TW';
+            utterance.rate = 1;
+            synth.speak(utterance);
+        }
+
+        function generateGrid() {
+            elements.gameGrid.innerHTML = '';
+            
+            let numbers = [];
+            const pairsCount = state.gridSize / 2;
+            
+            for (let i = 0; i < pairsCount; i++) {
+                let n1 = Math.floor(Math.random() * (state.target - 1)) + 1;
+                let n2 = state.target - n1;
+                numbers.push(n1, n2);
+            }
+
+            for (let i = numbers.length - 1; i > 0; i--) {
+                const j = Math.floor(Math.random() * (i + 1));
+                [numbers[i], numbers[j]] = [numbers[j], numbers[i]];
+            }
+
+            numbers.forEach(num => {
+                elements.gameGrid.appendChild(createCell(num));
+            });
+        }
+
+        function createCell(num) {
+            let cell = document.createElement('div');
+            const randomColor = macaronColors[Math.floor(Math.random() * macaronColors.length)];
+            
+            cell.className = `cell ${randomColor}`;
+            cell.innerText = num;
+            cell.dataset.value = num;
+            cell.onclick = (e) => handleCellClick(e, cell);
+            return cell;
+        }
+
+        function handleCellClick(e, cell) {
+            if (state.isProcessing || cell.classList.contains('matched')) return;
+            
+            // 點擊數字念出數字
+            speakText(cell.dataset.value);
+
+            if (cell === state.selectedCell) {
+                cell.classList.remove('selected');
+                state.selectedCell = null;
+                return;
+            }
+
+            if (state.selectedCell === null) {
+                state.selectedCell = cell;
+                cell.classList.add('selected');
+            } else {
+                let val1 = parseInt(state.selectedCell.dataset.value);
+                let val2 = parseInt(cell.dataset.value);
+
+                if (val1 + val2 === state.target) {
+                    handleMatch(state.selectedCell, cell);
+                } else {
+                    handleMismatch(state.selectedCell, cell);
+                }
+            }
+        }
+
+        function handleMatch(cell1, cell2) {
+            state.isProcessing = true;
+            
+            cell1.classList.remove('selected');
+            cell1.classList.add('matched');
+            cell2.classList.add('matched');
+
+            showFloatingText(cell2, "Good!");
+
+            state.remaining -= 2;
+            elements.remainingDisplay.innerText = state.remaining;
+
+            setTimeout(() => {
+                state.isProcessing = false;
+                state.selectedCell = null;
+                
+                if (state.remaining <= 0) {
+                    showWinScreen();
+                }
+            }, 400);
+        }
+
+        function handleMismatch(cell1, cell2) {
+            state.isProcessing = true;
+            cell2.classList.add('selected');
+            cell1.classList.add('shake');
+            cell2.classList.add('shake');
+
+            // 增加：答錯的語音提示
+            setTimeout(() => {
+                speakText("答錯了");
+            }, 200);
+
+            setTimeout(() => {
+                cell1.classList.remove('selected', 'shake');
+                cell2.classList.remove('selected', 'shake');
+                state.selectedCell = null;
+                state.isProcessing = false;
+            }, 400);
+        }
+
+        function showWinScreen() {
+            const finalTime = stopTimer();
+            elements.finalTimeDisplay.innerText = finalTime;
+            
+            setTimeout(() => {
+                elements.winOverlay.classList.remove('hidden');
+                createConfetti();
+                speakText("恭喜過關");
+            }, 300);
+        }
+
+        function createConfetti() {
+            const container = document.getElementById('confetti-container');
+            container.innerHTML = '';
+            const colors = ['#FFB7B2', '#E2F0CB', '#B5EAD7', '#E0BBE4', '#FFDAC1'];
+            
+            for(let i=0; i<40; i++) {
+                const conf = document.createElement('div');
+                conf.style.position = 'absolute';
+                conf.style.width = '12px';
+                conf.style.height = '12px';
+                conf.style.borderRadius = '50%';
+                conf.style.backgroundColor = colors[Math.floor(Math.random() * colors.length)];
+                conf.style.left = Math.random() * 100 + '%';
+                conf.style.top = '-10px';
+                conf.style.animation = `fall ${Math.random() * 2 + 1.5}s linear infinite`;
+                container.appendChild(conf);
+            }
+        }
+
+        const styleSheet = document.createElement("style");
+        styleSheet.innerText = `
+            @keyframes fall {
+                to { transform: translateY(400px) rotate(360deg); }
+            }
+        `;
+        document.head.appendChild(styleSheet);
+
+        function showFloatingText(element, text) {
+            const rect = element.getBoundingClientRect();
+            const floatEl = document.createElement('div');
+            floatEl.className = 'float-text';
+            floatEl.innerText = text;
+            floatEl.style.left = (rect.left + rect.width / 2 - 30) + 'px';
+            floatEl.style.top = (rect.top - 10) + 'px';
+            document.body.appendChild(floatEl);
+            setTimeout(() => floatEl.remove(), 800);
+        }
+
+        function goBack() {
+            stopTimer();
+            elements.winOverlay.classList.add('hidden');
+            elements.gameScreen.classList.add('hidden');
+            elements.gameScreen.classList.remove('flex');
+            elements.menuScreen.classList.remove('hidden');
+        }
+
+        initMenu();
+
+    </script>
+</body>
+</html>
