@@ -18,13 +18,12 @@
             touch-action: manipulation;
         }
 
-        /* 遊戲網格樣式 - 20 格 (5x4) */
         .game-grid {
             display: grid;
             grid-template-columns: repeat(5, 1fr);
             gap: 10px;
-            width: 100%;          /* 修正：撐滿父容器 */
-            max-width: 100%;      /* 修正：不超出螢幕 */
+            width: 100%;
+            max-width: 100%;
             margin: 0 auto;
             padding: 0;
         }
@@ -35,7 +34,7 @@
             display: flex;
             justify-content: center;
             align-items: center;
-            font-size: clamp(1.4rem, 6vw, 2.2rem);  /* 修正：依螢幕寬度縮放字體 */
+            font-size: clamp(1.4rem, 6vw, 2.2rem);
             font-weight: 700;
             color: #000000;
             text-shadow: 2px 2px 0px rgba(255,255,255,0.8);
@@ -45,6 +44,8 @@
             position: relative;
             user-select: none;
             -webkit-tap-highlight-color: transparent;
+            /* Android: must NOT have pointer-events:none blocking touch */
+            touch-action: manipulation;
         }
 
         .cell:active {
@@ -64,6 +65,7 @@
             transform: scale(1.2);
             opacity: 0;
             transition: transform 0.4s ease-out, opacity 0.4s ease-out;
+            pointer-events: none;
         }
 
         .cell.shake {
@@ -96,6 +98,10 @@
         .level-btn {
             transition: all 0.2s;
             font-family: 'Fredoka', sans-serif;
+            /* Android fix: ensure tap works */
+            touch-action: manipulation;
+            -webkit-tap-highlight-color: transparent;
+            cursor: pointer;
         }
         .level-btn:hover {
             transform: translateY(-4px);
@@ -157,14 +163,14 @@
         </div>
 
         <!-- 遊戲區域 -->
-        <div class="flex-1 w-full flex items-center justify-center px-4 py-2">  <!-- 修正：加 px-4 讓格子有左右邊距 -->
+        <div class="flex-1 w-full flex items-center justify-center px-4 py-2">
             <div class="game-grid" id="game-grid">
             </div>
         </div>
 
         <!-- 底部按鈕 -->
         <div class="py-4">
-            <button onclick="goBack()" class="flex items-center gap-2 px-8 py-3 bg-slate-800 hover:bg-slate-900 text-white rounded-full font-bold transition-colors shadow-lg border-2 border-white">
+            <button id="back-btn" class="flex items-center gap-2 px-8 py-3 bg-slate-800 hover:bg-slate-900 text-white rounded-full font-bold transition-colors shadow-lg border-2 border-white touch-action-manipulation" style="touch-action:manipulation;-webkit-tap-highlight-color:transparent;">
                 <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
                     <path fill-rule="evenodd" d="M9.707 16.707a1 1 0 01-1.414 0l-6-6a1 1 0 010-1.414l6-6a1 1 0 011.414 1.414L5.414 9H17a1 1 0 110 2H5.414l4.293 4.293a1 1 0 010 1.414z" clip-rule="evenodd" />
                 </svg>
@@ -188,10 +194,10 @@
             </div>
             
             <div class="flex flex-col gap-3">
-                <button onclick="restartLevel()" class="w-full py-4 bg-[#FF9AA2] hover:bg-[#ff808b] text-white rounded-2xl font-bold text-xl shadow-[0_4px_0_#e0757d] active:shadow-none active:translate-y-1 transition-all border-2 border-white">
+                <button id="restart-btn" class="w-full py-4 bg-[#FF9AA2] hover:bg-[#ff808b] text-white rounded-2xl font-bold text-xl shadow-[0_4px_0_#e0757d] active:shadow-none active:translate-y-1 transition-all border-2 border-white" style="touch-action:manipulation;-webkit-tap-highlight-color:transparent;">
                     再玩一次
                 </button>
-                <button onclick="goBack()" class="w-full py-4 bg-slate-100 hover:bg-slate-200 text-slate-600 rounded-2xl font-bold text-lg transition-colors border-2 border-slate-200">
+                <button id="menu-btn" class="w-full py-4 bg-slate-100 hover:bg-slate-200 text-slate-600 rounded-2xl font-bold text-lg transition-colors border-2 border-slate-200" style="touch-action:manipulation;-webkit-tap-highlight-color:transparent;">
                     回主選單
                 </button>
             </div>
@@ -199,6 +205,62 @@
     </div>
 
     <script>
+        // ── Android-safe tap helper ───────────────────────────────────
+        // Uses touchend when touch didn't scroll; falls back to click.
+        function addTapHandler(el, fn) {
+            if (!el) return;
+            let touchMoved = false;
+            el.addEventListener('touchstart', () => { touchMoved = false; }, { passive: true });
+            el.addEventListener('touchmove',  () => { touchMoved = true;  }, { passive: true });
+            el.addEventListener('touchend', (e) => {
+                if (!touchMoved) { e.preventDefault(); fn(e); }
+            });
+            el.addEventListener('click', fn);
+        }
+
+        // ── AudioContext unlock ───────────────────────────────────────
+        let audioUnlocked = false;
+        function unlockAudio() {
+            if (audioUnlocked) return;
+            audioUnlocked = true;
+            try {
+                const ctx = new (window.AudioContext || window.webkitAudioContext)();
+                const buf = ctx.createBuffer(1, 1, 22050);
+                const src = ctx.createBufferSource();
+                src.buffer = buf;
+                src.connect(ctx.destination);
+                src.start(0);
+                ctx.resume();
+            } catch(e) {}
+        }
+        document.addEventListener('touchstart', unlockAudio, { once: true, passive: true });
+
+        // ── TTS helper ───────────────────────────────────────────────
+        function speakText(text) {
+            if (!('speechSynthesis' in window)) return;
+            window.speechSynthesis.cancel();
+            function doSpeak() {
+                const u = new SpeechSynthesisUtterance(text);
+                u.lang = 'zh-TW';
+                u.rate = 1;
+                const voices = window.speechSynthesis.getVoices();
+                const zhVoice = voices.find(v => /zh[-_](TW|HK|Hant)/i.test(v.lang))
+                             || voices.find(v => /zh/i.test(v.lang));
+                if (zhVoice) u.voice = zhVoice;
+                window.speechSynthesis.speak(u);
+            }
+            if (window.speechSynthesis.getVoices().length === 0) {
+                window.speechSynthesis.onvoiceschanged = () => {
+                    window.speechSynthesis.onvoiceschanged = null;
+                    doSpeak();
+                };
+                setTimeout(doSpeak, 500); // fallback
+            } else {
+                doSpeak();
+            }
+        }
+
+        // ── Game state ───────────────────────────────────────────────
         const state = {
             target: 10,
             remaining: 20,
@@ -210,48 +272,49 @@
         };
 
         const elements = {
-            menuScreen: document.getElementById('menu-screen'),
-            gameScreen: document.getElementById('game-screen'),
-            levelButtons: document.getElementById('level-buttons'),
-            gameGrid: document.getElementById('game-grid'),
-            targetDisplay: document.getElementById('target-display'),
+            menuScreen:       document.getElementById('menu-screen'),
+            gameScreen:       document.getElementById('game-screen'),
+            levelButtons:     document.getElementById('level-buttons'),
+            gameGrid:         document.getElementById('game-grid'),
+            targetDisplay:    document.getElementById('target-display'),
             remainingDisplay: document.getElementById('remaining-display'),
-            timerDisplay: document.getElementById('timer-display'),
-            winOverlay: document.getElementById('win-overlay'),
+            timerDisplay:     document.getElementById('timer-display'),
+            winOverlay:       document.getElementById('win-overlay'),
             finalTimeDisplay: document.getElementById('final-time-display')
         };
 
-        const synth = window.speechSynthesis;
-        
         const macaronColors = [
-            'bg-macaron-pink',
-            'bg-macaron-green',
-            'bg-macaron-blue',
-            'bg-macaron-purple',
-            'bg-macaron-yellow',
-            'bg-macaron-orange'
+            'bg-macaron-pink','bg-macaron-green','bg-macaron-blue',
+            'bg-macaron-purple','bg-macaron-yellow','bg-macaron-orange'
         ];
 
+        // ── Wire static buttons ───────────────────────────────────────
+        addTapHandler(document.getElementById('back-btn'),    () => goBack());
+        addTapHandler(document.getElementById('restart-btn'), () => restartLevel());
+        addTapHandler(document.getElementById('menu-btn'),    () => goBack());
+
+        // ── Menu ─────────────────────────────────────────────────────
         function initMenu() {
             elements.levelButtons.innerHTML = '';
-            
             for (let i = 3; i <= 10; i++) {
-                let btn = document.createElement('button');
-                let colorClass = macaronColors[(i) % macaronColors.length];
+                const btn = document.createElement('button');
+                const colorClass = macaronColors[i % macaronColors.length];
                 btn.className = `level-btn ${colorClass} text-black font-bold text-3xl py-6 rounded-2xl shadow-[0_4px_0_rgba(0,0,0,0.1)] active:shadow-none active:translate-y-1 border-2 border-white/40`;
                 btn.innerText = i;
-                btn.onclick = () => startGame(i);
+                const target = i;
+                addTapHandler(btn, () => { unlockAudio(); startGame(target); });
                 elements.levelButtons.appendChild(btn);
             }
         }
 
+        // ── Game lifecycle ────────────────────────────────────────────
         function startGame(target) {
             state.target = target;
             state.remaining = state.gridSize;
             state.selectedCell = null;
             state.isProcessing = false;
 
-            elements.targetDisplay.innerText = state.target;
+            elements.targetDisplay.innerText    = state.target;
             elements.remainingDisplay.innerText = state.remaining;
             elements.winOverlay.classList.add('hidden');
             elements.timerDisplay.innerText = "00:00";
@@ -264,19 +327,16 @@
             startTimer();
         }
 
-        function restartLevel() {
-            startGame(state.target);
-        }
+        function restartLevel() { startGame(state.target); }
 
         function startTimer() {
             if (state.timerInterval) clearInterval(state.timerInterval);
             state.startTime = Date.now();
-            
             state.timerInterval = setInterval(() => {
                 const elapsed = Math.floor((Date.now() - state.startTime) / 1000);
-                const minutes = Math.floor(elapsed / 60).toString().padStart(2, '0');
-                const seconds = (elapsed % 60).toString().padStart(2, '0');
-                elements.timerDisplay.innerText = `${minutes}:${seconds}`;
+                const m = Math.floor(elapsed / 60).toString().padStart(2, '0');
+                const s = (elapsed % 60).toString().padStart(2, '0');
+                elements.timerDisplay.innerText = `${m}:${s}`;
             }, 1000);
         }
 
@@ -285,52 +345,40 @@
             return elements.timerDisplay.innerText;
         }
 
-        function speakText(text) {
-            if (synth.speaking) {
-                synth.cancel();
-            }
-            const utterance = new SpeechSynthesisUtterance(text);
-            utterance.lang = 'zh-TW';
-            utterance.rate = 1;
-            synth.speak(utterance);
-        }
-
+        // ── Grid ──────────────────────────────────────────────────────
         function generateGrid() {
             elements.gameGrid.innerHTML = '';
-            
             let numbers = [];
             const pairsCount = state.gridSize / 2;
-            
             for (let i = 0; i < pairsCount; i++) {
-                let n1 = Math.floor(Math.random() * (state.target - 1)) + 1;
-                let n2 = state.target - n1;
+                const n1 = Math.floor(Math.random() * (state.target - 1)) + 1;
+                const n2 = state.target - n1;
                 numbers.push(n1, n2);
             }
-
             for (let i = numbers.length - 1; i > 0; i--) {
                 const j = Math.floor(Math.random() * (i + 1));
                 [numbers[i], numbers[j]] = [numbers[j], numbers[i]];
             }
-
-            numbers.forEach(num => {
-                elements.gameGrid.appendChild(createCell(num));
-            });
+            numbers.forEach(num => elements.gameGrid.appendChild(createCell(num)));
         }
 
         function createCell(num) {
-            let cell = document.createElement('div');
+            const cell = document.createElement('div');
             const randomColor = macaronColors[Math.floor(Math.random() * macaronColors.length)];
-            
             cell.className = `cell ${randomColor}`;
             cell.innerText = num;
             cell.dataset.value = num;
-            cell.onclick = (e) => handleCellClick(e, cell);
+
+            // ── KEY FIX: use addTapHandler instead of onclick ────────
+            addTapHandler(cell, () => handleCellClick(cell));
+
             return cell;
         }
 
-        function handleCellClick(e, cell) {
+        // ── Game logic ────────────────────────────────────────────────
+        function handleCellClick(cell) {
             if (state.isProcessing || cell.classList.contains('matched')) return;
-            
+
             speakText(cell.dataset.value);
 
             if (cell === state.selectedCell) {
@@ -343,9 +391,8 @@
                 state.selectedCell = cell;
                 cell.classList.add('selected');
             } else {
-                let val1 = parseInt(state.selectedCell.dataset.value);
-                let val2 = parseInt(cell.dataset.value);
-
+                const val1 = parseInt(state.selectedCell.dataset.value);
+                const val2 = parseInt(cell.dataset.value);
                 if (val1 + val2 === state.target) {
                     handleMatch(state.selectedCell, cell);
                 } else {
@@ -356,23 +403,16 @@
 
         function handleMatch(cell1, cell2) {
             state.isProcessing = true;
-            
             cell1.classList.remove('selected');
             cell1.classList.add('matched');
             cell2.classList.add('matched');
-
             showFloatingText(cell2, "Good!");
-
             state.remaining -= 2;
             elements.remainingDisplay.innerText = state.remaining;
-
             setTimeout(() => {
                 state.isProcessing = false;
                 state.selectedCell = null;
-                
-                if (state.remaining <= 0) {
-                    showWinScreen();
-                }
+                if (state.remaining <= 0) showWinScreen();
             }, 400);
         }
 
@@ -381,11 +421,7 @@
             cell2.classList.add('selected');
             cell1.classList.add('shake');
             cell2.classList.add('shake');
-
-            setTimeout(() => {
-                speakText("答錯了");
-            }, 200);
-
+            setTimeout(() => speakText("答錯了"), 200);
             setTimeout(() => {
                 cell1.classList.remove('selected', 'shake');
                 cell2.classList.remove('selected', 'shake');
@@ -397,50 +433,11 @@
         function showWinScreen() {
             const finalTime = stopTimer();
             elements.finalTimeDisplay.innerText = finalTime;
-            
             setTimeout(() => {
                 elements.winOverlay.classList.remove('hidden');
                 createConfetti();
                 speakText("恭喜過關");
             }, 300);
-        }
-
-        function createConfetti() {
-            const container = document.getElementById('confetti-container');
-            container.innerHTML = '';
-            const colors = ['#FFB7B2', '#E2F0CB', '#B5EAD7', '#E0BBE4', '#FFDAC1'];
-            
-            for(let i=0; i<40; i++) {
-                const conf = document.createElement('div');
-                conf.style.position = 'absolute';
-                conf.style.width = '12px';
-                conf.style.height = '12px';
-                conf.style.borderRadius = '50%';
-                conf.style.backgroundColor = colors[Math.floor(Math.random() * colors.length)];
-                conf.style.left = Math.random() * 100 + '%';
-                conf.style.top = '-10px';
-                conf.style.animation = `fall ${Math.random() * 2 + 1.5}s linear infinite`;
-                container.appendChild(conf);
-            }
-        }
-
-        const styleSheet = document.createElement("style");
-        styleSheet.innerText = `
-            @keyframes fall {
-                to { transform: translateY(400px) rotate(360deg); }
-            }
-        `;
-        document.head.appendChild(styleSheet);
-
-        function showFloatingText(element, text) {
-            const rect = element.getBoundingClientRect();
-            const floatEl = document.createElement('div');
-            floatEl.className = 'float-text';
-            floatEl.innerText = text;
-            floatEl.style.left = (rect.left + rect.width / 2 - 30) + 'px';
-            floatEl.style.top = (rect.top - 10) + 'px';
-            document.body.appendChild(floatEl);
-            setTimeout(() => floatEl.remove(), 800);
         }
 
         function goBack() {
@@ -451,8 +448,40 @@
             elements.menuScreen.classList.remove('hidden');
         }
 
-        initMenu();
+        // ── Visual effects ────────────────────────────────────────────
+        function createConfetti() {
+            const container = document.getElementById('confetti-container');
+            container.innerHTML = '';
+            const colors = ['#FFB7B2','#E2F0CB','#B5EAD7','#E0BBE4','#FFDAC1'];
+            for (let i = 0; i < 40; i++) {
+                const conf = document.createElement('div');
+                conf.style.cssText = `
+                    position:absolute; width:12px; height:12px; border-radius:50%;
+                    background-color:${colors[Math.floor(Math.random() * colors.length)]};
+                    left:${Math.random() * 100}%; top:-10px;
+                    animation:fall ${Math.random() * 2 + 1.5}s linear infinite;
+                `;
+                container.appendChild(conf);
+            }
+        }
 
+        const styleSheet = document.createElement("style");
+        styleSheet.innerText = `@keyframes fall { to { transform: translateY(400px) rotate(360deg); } }`;
+        document.head.appendChild(styleSheet);
+
+        function showFloatingText(element, text) {
+            const rect = element.getBoundingClientRect();
+            const floatEl = document.createElement('div');
+            floatEl.className = 'float-text';
+            floatEl.innerText = text;
+            floatEl.style.left = (rect.left + rect.width / 2 - 30) + 'px';
+            floatEl.style.top  = (rect.top - 10) + 'px';
+            document.body.appendChild(floatEl);
+            setTimeout(() => floatEl.remove(), 800);
+        }
+
+        // ── Init ──────────────────────────────────────────────────────
+        initMenu();
     </script>
 </body>
 </html>
