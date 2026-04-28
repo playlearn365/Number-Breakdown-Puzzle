@@ -236,25 +236,41 @@
         document.addEventListener('touchstart', unlockAudio, { once: true, passive: true });
 
         // ── TTS helper ───────────────────────────────────────────────
+        // 預先載入語音（頁面一開始就觸發，Android 需要時間準備）
+        let zhVoiceCache = null;
+        function loadVoices() {
+            const voices = window.speechSynthesis.getVoices();
+            if (voices.length > 0) {
+                zhVoiceCache = voices.find(v => /zh[-_](TW|HK|Hant)/i.test(v.lang))
+                            || voices.find(v => /zh/i.test(v.lang))
+                            || null;
+            }
+        }
+        window.speechSynthesis.onvoiceschanged = loadVoices;
+        loadVoices(); // 若已載入直接取用
+
         function speakText(text) {
             if (!('speechSynthesis' in window)) return;
             window.speechSynthesis.cancel();
+
             function doSpeak() {
                 const u = new SpeechSynthesisUtterance(text);
                 u.lang = 'zh-TW';
                 u.rate = 1;
-                const voices = window.speechSynthesis.getVoices();
-                const zhVoice = voices.find(v => /zh[-_](TW|HK|Hant)/i.test(v.lang))
-                             || voices.find(v => /zh/i.test(v.lang));
-                if (zhVoice) u.voice = zhVoice;
+                if (zhVoiceCache) u.voice = zhVoiceCache;
                 window.speechSynthesis.speak(u);
             }
-            if (window.speechSynthesis.getVoices().length === 0) {
+
+            // 若語音還沒載入，等最多 1 秒
+            if (!zhVoiceCache && window.speechSynthesis.getVoices().length === 0) {
+                let done = false;
+                const prev = window.speechSynthesis.onvoiceschanged;
                 window.speechSynthesis.onvoiceschanged = () => {
-                    window.speechSynthesis.onvoiceschanged = null;
-                    doSpeak();
+                    loadVoices();
+                    window.speechSynthesis.onvoiceschanged = prev;
+                    if (!done) { done = true; doSpeak(); }
                 };
-                setTimeout(doSpeak, 500); // fallback
+                setTimeout(() => { if (!done) { done = true; doSpeak(); } }, 1000);
             } else {
                 doSpeak();
             }
